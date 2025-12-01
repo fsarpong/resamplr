@@ -31,4 +31,3 @@ Config/testthat/edition: 3
 VignetteBuilder: knitr
 URL: https://github.com/fsarpong/resamplr
 BugReports: https://github.com/fsarpong/resamplr/issues
-BugReports: https://github.com/fsarpong/resamplr/issues
