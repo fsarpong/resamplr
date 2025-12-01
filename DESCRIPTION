@@ -1,16 +1,16 @@
 Package: resamplr
 Title: Resampling, Permutation Testing, and Monte Carlo Methods in R
 Version: 0.1.0
-Authors@R: c(
+Authors@R: 
+  c(
     person("Felix", "Sarpong", 
            email = "fsarpong1@student.gsu.edu", 
            role = c("aut", "cre"),
            comment = c(ORCID = "0000-0002-5900-6381")),
     person("Allswell", "Akomanyi", 
            email = "aakomanyi1@student.gsu.edu", 
-           role = "aut",
-           comment = c(ORCID = ""))
-)
+           role = "aut")
+    )
 Description: 
     A pedagogically oriented implementation of classical resampling and 
     randomization methods for Statistical Computing. The package includes 
