@@ -1,0 +1,433 @@
+---
+title: "Using `resamplr`: A Complete Guide to Resampling and Randomization Methods"
+author: "Felix A. Sarpong and Allswell A. Akomanyi"
+date: "`r Sys.Date()`"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 4
+vignette: >
+  %\VignetteIndexEntry{Using resamplr: A Complete Guide}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+Introduction
+
+The resamplr package provides transparent, from-scratch implementations of core resampling and randomization techniques:
+
+•	Bootstrap (SE, bias, confidence intervals)
+	
+•	Jackknife (SE, bias)
+	
+•	Permutation tests
+	
+•	Cross-validation (K-fold and LOOCV)
+	
+•	Monte Carlo integration with variance reduction (antithetic variables, control variates, importance sampling, stratified sampling)
+
+This vignette explains:
+
+	1.	What each method is conceptually,
+	
+	2.	When to use it,
+	
+	3.	The underlying mathematics,
+	
+	4.	How to use the corresponding functions in resamplr,
+	
+	5.	Simulation examples demonstrating correctness.
+
+This complements standard references:
+
+	•	Rizzo (2019): Statistical Computing with R
+	
+	•	Wegman & Solka (2011): Computational Statistics
+	
+	•	Everitt & Hothorn (2006): A Handbook of Statistical Analyses Using R
+
+⸻
+
+Installation
+
+To install from GitHub:
+
+```{r}
+install.packages("remotes") #comment if you have "remotes" pkg already
+remotes::install_github("fsarpong/resamplr")
+
+#Load the package:
+
+library(resamplr)
+```
+
+⸻
+
+1. Bootstrap
+
+1.1 What is the bootstrap?
+
+The bootstrap is a simulation-based method for understanding how a statistic
+varies when you could hypothetically repeat your data collection many times.
+Since we only have one dataset, the bootstrap mimics repeated sampling by
+resampling from the data itself.
+
+Let the statistic be:
+
+\[
+T = t(X_1, \ldots, X_n)
+\]
+
+We generate bootstrap samples:
+
+\[
+(X_1^{(b)}, \ldots, X_n^{(b)}), \quad b = 1,\ldots,B
+\]
+
+and compute:
+
+\[
+T_b^* = t(X_1^{(b)},\ldots,X_n^{(b)}).
+\]
+
+The variability of ({T_b^*}) approximates the sampling variability of (T).
+
+⸻
+
+1.2 Bootstrap in resamplr
+
+Compute bootstrap replicates
+
+```{r}
+set.seed(123)
+x <- rnorm(50, mean = 5, sd = 2)
+
+b <- boot_stat(x, stat = mean, B = 2000)
+str(b)
+```
+
+Bootstrap standard error
+
+```{r}
+boot_se(b)
+```
+
+Bootstrap bias
+
+```{r}
+boot_bias(b)
+```
+
+Bootstrap confidence intervals
+
+```{r}
+boot_ci(b, method = "percentile")
+boot_ci(b, method = "basic")
+boot_ci(b, method = "normal")
+```
+
+⸻
+
+1.3 Example: Bootstrap CI for median of exponential data
+
+```{r}
+set.seed(1)
+x <- rexp(40, rate = 1)
+
+b <- boot_stat(x, stat = median, B = 2000)
+
+boot_ci(b, method = "percentile", level = 0.95)
+```
+
+⸻
+
+2. Jackknife
+
+2.1 Concept
+
+The jackknife evaluates the sensitivity of a statistic by removing one
+observation at a time:
+
+\[
+T_{(i)} = t(X_1,\ldots,X_{i-1},X_{i+1},\ldots,X_n).
+\]
+
+This leads to jackknife estimates of:
+
+	•	Bias
+	
+	•	Standard error
+
+It is computationally cheaper than the bootstrap and works well for smooth
+statistics.
+
+⸻
+
+2.2 Jackknife in resamplr
+
+```{r}
+set.seed(123)
+x <- rnorm(30)
+
+j <- jack_stat(x, stat = mean)
+
+jack_bias(j)
+jack_se(j)
+```
+
+⸻
+
+3. Permutation Tests
+
+3.1 Idea
+
+A permutation test compares two groups without assuming normality or any
+specific distribution.
+
+Under the null hypothesis:
+
+\[
+H_0: F_X = F_Y
+\]
+
+the group labels are arbitrary. Therefore:
+
+	1.	Compute the observed difference in means (or another statistic).
+	
+	2.	Shuffle the group labels.
+	
+	3.	Compute the difference for each shuffle.
+	
+	4.	The $p$-value is the fraction of shuffled differences more extreme than the observed.
+
+Permutation tests give exact or near-exact inference even in small samples.
+
+⸻
+
+3.2 Permutation test in resamplr
+
+```{r}
+set.seed(10)
+
+x <- rnorm(12, 0, 1)
+y <- rnorm(10, 1, 1)
+
+pt <- perm_test(x, y, B = 5000)
+pt$p_value
+```
+
+You can also access:
+
+	•	Observed statistic: `r pt$stat_obs`
+	
+	•	Permutation distribution: `r pt$t_perm`
+
+⸻
+
+4. Cross-Validation (CV)
+
+4.1 Idea
+
+Cross-validation estimates how well a model performs on new data.
+
+Steps:
+
+	1.	Split data into (K) folds.
+	
+	2.	Train on (K-1) folds.
+	
+	3.	Test on the remaining fold.
+	
+	4.	Repeat for all folds.
+	
+	5.	Average prediction errors.
+
+⸻
+
+4.2 CV in resamplr
+
+We define three functions:
+
+	•	model_fit(x, y) – trains the model
+	
+	•	predict_fun(model, xnew) – predicts
+	
+	•	loss(y, yhat) – measures error
+
+Example: linear regression CV
+
+```{r}
+set.seed(321)
+
+# x as a data frame (not just a vector)
+dat <- data.frame(x = runif(80))
+y   <- 3 + 2 * dat$x + rnorm(80, sd = 0.3)
+
+# model_fit: takes a DATA FRAME and y
+model_fit <- function(data, y) {
+  lm(y ~ x, data = data)
+}
+
+# predict_fun: takes the model and a DATA FRAME
+predict_fun <- function(model, newdata) {
+  predict(model, newdata = newdata)
+}
+
+# squared error loss
+loss <- function(y_true, y_pred) {
+  mean((y_true - y_pred)^2)
+}
+
+# K-fold cross-validation
+cv_out <- kfold_cv(
+  data        = dat,      # <--- IMPORTANT: use 'data', not 'x'
+  y           = y,
+  K           = 5,
+  model_fit   = model_fit,
+  predict_fun = predict_fun,
+  loss        = loss,
+  seed        = 8670
+)
+
+cv_out
+```
+
+⸻
+
+5. Monte Carlo Integration
+
+5.1 Idea
+
+To approximate:
+
+\[
+\theta = \mathbb{E}[g(X)],
+\]
+
+we simulate samples:
+
+\[
+X_1,\ldots,X_n \sim \text{distribution of } X,
+\]
+
+and compute:
+
+\[
+\hat{\theta} = \frac{1}{n} \sum_{i=1}^n g(X_i).
+\]
+
+⸻
+
+5.2 Monte Carlo in resamplr
+
+Example: estimate \( \mathbb{E}[\exp(X)] \) for \( X \sim N(0,1) \).
+
+```{r}
+g <- function(x) exp(x)
+sampler <- function(n) rnorm(n)
+
+mc_integrate(g, sampler, n = 5000)
+```
+
+⸻
+
+6. Variance Reduction Methods
+
+resamplr implements:
+
+	1.	Antithetic variables
+	
+	2.	Control variates
+	
+	3.	Importance sampling
+	
+	4.	Stratified sampling
+
+⸻
+
+6.1 Example: Control variates
+
+Use \( C = X \) as a control variate (mean = 0).
+
+```{r}
+ctrl <- mc_integrate(g, sampler, n = 5000,
+                     method = "control",
+                     control = list(h = function(x) x, mu_h = 0))
+
+ctrl
+```
+
+⸻
+
+7. Simulation Examples
+
+7.1 Bootstrap CI coverage
+
+Simple demonstration:
+
+```{r}
+set.seed(1)
+
+true_med <- log(2)
+n <- 40
+nrep <- 200
+B <- 1000
+
+cover <- numeric(nrep)
+
+for(i in 1:nrep){
+  x <- rexp(n)
+  b <- boot_stat(x, stat = median, B = B)
+  ci <- boot_ci(b, method = "percentile")
+  cover[i] <- ci[1] <= true_med && true_med <= ci[2]
+}
+
+mean(cover)
+```
+
+⸻
+
+8. Summary
+
+resamplr provides easy-to-read, transparent implementations of:
+
+	•	Bootstrap (SE, bias, CIs)
+	
+	•	Jackknife
+	
+	•	Permutation tests
+	
+	•	Cross-validation
+	
+	•	Monte Carlo integration with variance reduction
+
+The package is ideal for:
+
+	•	Statistical Computing courses
+	
+	•	Graduate Computational Methods
+	
+	•	Teaching, research, and demonstration
+
+For suggestions or contributions, please see the GitHub page:
+
+https://github.com/fsarpong/resamplr￼
+
+⸻
+
+References
+
+	•	Rizzo (2019), Statistical Computing with R
+	
+	•	Wegman & Solka (2011), Computational Statistics
+	
+	•	Everitt & Hothorn (2006), A Handbook of Statistical Analyses Using R
+
+---
